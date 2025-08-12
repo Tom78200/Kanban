@@ -1,0 +1,301 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String?
+  avatar    String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // OAuth fields
+  emailVerified DateTime?
+  image         String?
+
+  // Relations
+  projects    Project[]    @relation("ProjectMembers")
+  ownedProjects Project[]  @relation("ProjectOwner")
+  tasks       Task[]       @relation("TaskAssignee")
+  createdTasks Task[]      @relation("TaskCreator")
+  comments    Comment[]    @relation("CommentAuthor")
+  activities  Activity[]   @relation("UserActivities")
+  accounts    Account[]    @relation("UserAccounts")
+  sessions    Session[]    @relation("UserSessions")
+  messages    Message[]    @relation("MessageAuthor")
+  likedMessages MessageLike[] @relation("MessageLikes")
+  followers   UserFollow[] @relation("UserFollowers")
+  following   UserFollow[] @relation("UserFollowing")
+  teamMemberships TeamMember[] @relation("UserTeamMemberships")
+  teamMessages   TeamMessage[] @relation("UserTeamMessages")
+  ownedTeams     Team[]        @relation("TeamOwner")
+  notifications  Notification[] @relation("UserNotifications")
+
+  @@map("users")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  likes     Int      @default(0)
+
+  // Relations
+  authorId      String
+  author        User       @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  // Réponses (self-relation)
+  replyToId     String?
+  repliedTo     Message?   @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: Cascade)
+  replies       Message[]  @relation("MessageReplies")
+
+  // Méta d'affichage pour réponse
+  replyToAuthor String?
+
+  likedBy       MessageLike[] @relation("MessageLikes")
+  images        MessageImage[] @relation("MessageImages")
+
+  @@map("messages")
+}
+
+model MessageLike {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation("MessageLikes", fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation("MessageLikes", fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@map("message_likes")
+}
+
+model MessageImage {
+  id        String   @id @default(cuid())
+  url       String
+  messageId String
+  createdAt DateTime @default(now())
+
+  message Message @relation("MessageImages", fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_images")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  authorId String
+  author   User    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  taskId   String
+  task     Task    @relation("TaskComments", fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  type      String
+  description String
+  createdAt DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User   @relation("UserActivities", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  ownerId String
+  owner   User    @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members User[]  @relation("ProjectMembers")
+  tasks   Task[]  @relation("ProjectTasks")
+
+  @@map("projects")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  projectId String
+  project   Project @relation("ProjectTasks", fields: [projectId], references: [id], onDelete: Cascade)
+  assigneeId String?
+  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creatorId  String
+  creator    User    @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  comments   Comment[] @relation("TaskComments")
+
+  @@map("tasks")
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownerId String
+  owner   User           @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members TeamMember[]   @relation("TeamMembers")
+  chats   TeamChat[]     @relation("TeamChats")
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  joinedAt  DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User @relation("UserTeamMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  teamId String
+  team   Team @relation("TeamMembers", fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+model TeamChat {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  teamId String
+  team   Team          @relation("TeamChats", fields: [teamId], references: [id], onDelete: Cascade)
+  messages TeamMessage[] @relation("ChatMessages")
+
+  @@map("team_chats")
+}
+
+model TeamMessage {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  authorId String
+  author   User      @relation("UserTeamMessages", fields: [authorId], references: [id], onDelete: Cascade)
+  chatId   String
+  chat     TeamChat  @relation("ChatMessages", fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("team_messages")
+}
+
+model UserFollow {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relations
+  followerId String
+  follower   User @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User @relation("UserFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("user_follows")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation("UserAccounts", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  timestamp DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
