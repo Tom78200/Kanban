@@ -918,7 +918,7 @@ export default function Projets() {
               gap: '16px',
               alignItems: 'start'
             }}>
-              {currentProject.members.map((member) => (
+              {currentProject.members.map((member: { id: string; name: string; email: string; avatar?: string }) => (
                 <div key={member.id} style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1132,11 +1132,7 @@ export default function Projets() {
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
-            gap: '16px',
-            '@media (max-width: 768px)': {
-              gridTemplateColumns: '1fr',
-              gap: '12px'
-            }
+            gap: '16px'
           }}>
             <KanbanColumn
               title="To Do"
@@ -1203,8 +1199,7 @@ export default function Projets() {
             fontWeight: 'bold',
             boxShadow: '0 8px 25px rgba(59, 130, 246, 0.4)',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            backdropFilter: 'blur(10px)',
-            border: '2px solid rgba(255, 255, 255, 0.2)'
+            backdropFilter: 'blur(10px)'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.1) rotate(5deg)'
