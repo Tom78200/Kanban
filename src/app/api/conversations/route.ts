@@ -1,174 +1,84 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
-export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 });
-    }
-
-    // Récupérer toutes les équipes dont l'utilisateur est membre
-    const teams = await prisma.team.findMany({
-      where: {
-        members: {
-          some: {
-            userId: user.id
-          }
-        }
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true
-          }
-        },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                avatar: true
-              }
-            }
-          }
-        },
-        chats: {
-          include: {
-            messages: {
-              orderBy: {
-                createdAt: 'desc'
-              },
-              take: 1,
-              include: {
-                author: {
-                  select: {
-                    id: true,
-                    name: true,
-                    avatar: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Formater les conversations
-    const conversations = teams.map(team => ({
-      id: team.id,
-      name: team.name,
-      owner: team.owner,
-      members: team.members.map(member => ({
-        id: member.user.id,
-        name: member.user.name,
-        avatar: member.user.avatar
-      })),
-      chats: team.chats.map(chat => ({
-        id: chat.id,
-        name: chat.name,
-        lastMessage: chat.messages[0] || null
-      }))
-    }));
-
-    return NextResponse.json(conversations);
-  } catch (error) {
-    console.error('Erreur lors de la récupération des conversations:', error);
-    return NextResponse.json(
-      { error: 'Erreur interne du serveur' },
-      { status: 500 }
-    );
-  }
-}
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const me = await prisma.user.findUnique({ where: { email: session.user.email } })
+    if (!me) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    const { name, memberIds } = await request.json()
+    if (!name || typeof name !== 'string' || name.trim().length < 1) {
+      return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
     }
+    const ids: string[] = Array.isArray(memberIds) ? memberIds.filter(Boolean) : []
+    const uniqueIds = Array.from(new Set([me.id, ...ids]))
 
-    const { name, memberEmails } = await request.json();
+    // Validate users exist
+    const users = await prisma.user.findMany({ where: { id: { in: uniqueIds } }, select: { id: true } })
+    const validIds = users.map(u => u.id)
 
-    if (!name || !memberEmails || !Array.isArray(memberEmails)) {
-      return NextResponse.json(
-        { error: 'Nom et membres requis' },
-        { status: 400 }
-      );
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      const team = await tx.team.create({ data: { name: name.trim(), ownerId: me!.id } })
+      await tx.teamMember.createMany({
+        data: validIds.map(id => ({ teamId: team.id, userId: id, role: id === me!.id ? 'OWNER' : 'MEMBER' }))
+      })
+      const chat = await tx.teamChat.create({ data: { teamId: team.id, name: 'Général' } })
+      return { teamId: team.id, chatId: chat.id }
+    })
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email }
-    });
+    return NextResponse.json(result, { status: 201 })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error'
+    console.error('POST /conversations error', e)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
 
-    if (!user) {
-      return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 });
-    }
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const me = await prisma.user.findUnique({ where: { email: session.user.email } })
+    if (!me) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    // Créer l'équipe
-    const team = await prisma.team.create({
-      data: {
-        name,
-        ownerId: user.id,
-        members: {
-          create: [
-            { userId: user.id }, // Créateur de l'équipe
-            ...memberEmails.map((email: string) => ({
-              userId: email // On va d'abord créer l'équipe, puis ajouter les membres
-            }))
-          ]
-        },
-        chats: {
-          create: {
-            name: 'Général'
-          }
-        }
-      },
+    // Récupère tous les teams auxquels je participe, avec les chats et les membres (utilisateurs)
+    const memberships = await prisma.teamMember.findMany({
+      where: { userId: me.id },
       include: {
-        owner: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true
-          }
-        },
-        members: {
+        team: {
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                avatar: true
-              }
-            }
+            chats: true,
+            members: { include: { user: { select: { id: true, name: true, email: true, avatar: true } } } }
           }
         }
       }
-    });
+    })
 
-    return NextResponse.json(team, { status: 201 });
-  } catch (error) {
-    console.error('Erreur lors de la création de la conversation:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création de la conversation' },
-      { status: 500 }
-    );
+    const chats = memberships.flatMap((m) =>
+      m.team.chats.map((c) => ({
+        id: c.id,
+        name: m.team.name || c.name,
+        members: m.team.members.map((mm) => ({
+          id: mm.user.id,
+          name: mm.user.name,
+          email: mm.user.email,
+          avatar: mm.user.avatar || undefined
+        })),
+        team: {
+          id: m.team.id,
+          ownerId: m.team.ownerId
+        }
+      }))
+    )
+
+    return NextResponse.json(chats)
+  } catch (e) {
+    console.error('GET /conversations error', e)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }
 

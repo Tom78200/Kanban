@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model User {
@@ -29,18 +29,18 @@ model User {
   ownedProjects Project[]  @relation("ProjectOwner")
   tasks       Task[]       @relation("TaskAssignee")
   createdTasks Task[]      @relation("TaskCreator")
-  comments    Comment[]    @relation("CommentAuthor")
-  activities  Activity[]   @relation("UserActivities")
-  accounts    Account[]    @relation("UserAccounts")
-  sessions    Session[]    @relation("UserSessions")
+  comments    Comment[]
+  activities  Activity[]
+  accounts    Account[]
+  sessions    Session[]
   messages    Message[]    @relation("MessageAuthor")
-  likedMessages MessageLike[] @relation("MessageLikes")
+  likedMessages MessageLike[]
   followers   UserFollow[] @relation("UserFollowers")
   following   UserFollow[] @relation("UserFollowing")
-  teamMemberships TeamMember[] @relation("UserTeamMemberships")
-  teamMessages   TeamMessage[] @relation("UserTeamMessages")
+  teamMemberships TeamMember[]
+  teamMessages   TeamMessage[]
   ownedTeams     Team[]        @relation("TeamOwner")
-  notifications  Notification[] @relation("UserNotifications")
+  notifications  Notification[]
 
   @@map("users")
 }
@@ -64,170 +64,103 @@ model Message {
   // Méta d'affichage pour réponse
   replyToAuthor String?
 
-  likedBy       MessageLike[] @relation("MessageLikes")
-  images        MessageImage[] @relation("MessageImages")
+  likedBy       MessageLike[]
+  images        MessageImage[]
 
   @@map("messages")
-}
-
-model MessageLike {
-  id        String   @id @default(cuid())
-  userId    String
-  messageId String
-  createdAt DateTime @default(now())
-
-  user    User    @relation("MessageLikes", fields: [userId], references: [id], onDelete: Cascade)
-  message Message @relation("MessageLikes", fields: [messageId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, messageId])
-  @@map("message_likes")
 }
 
 model MessageImage {
   id        String   @id @default(cuid())
   url       String
-  messageId String
   createdAt DateTime @default(now())
 
-  message Message @relation("MessageImages", fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@map("message_images")
-}
-
-model Comment {
-  id        String   @id @default(cuid())
-  content   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  authorId String
-  author   User    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  taskId   String
-  task     Task    @relation("TaskComments", fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@map("comments")
-}
-
-model Activity {
-  id        String   @id @default(cuid())
-  type      String
-  description String
-  createdAt DateTime @default(now())
-
-  // Relations
-  userId String
-  user   User   @relation("UserActivities", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("activities")
-}
-
-model Project {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  ownerId String
-  owner   User    @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members User[]  @relation("ProjectMembers")
-  tasks   Task[]  @relation("ProjectTasks")
-
-  @@map("projects")
-}
-
-model Task {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  status      TaskStatus @default(TODO)
-  priority    Priority   @default(MEDIUM)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  // Relations
-  projectId String
-  project   Project @relation("ProjectTasks", fields: [projectId], references: [id], onDelete: Cascade)
-  assigneeId String?
-  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  creatorId  String
-  creator    User    @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
-  comments   Comment[] @relation("TaskComments")
-
-  @@map("tasks")
 }
 
 model Team {
   id        String   @id @default(cuid())
   name      String
+  ownerId   String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  // Relations
-  ownerId String
-  owner   User           @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members TeamMember[]   @relation("TeamMembers")
-  chats   TeamChat[]     @relation("TeamChats")
+  owner   User       @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members TeamMember[]
+  chats   TeamChat[]
 
   @@map("teams")
 }
 
 model TeamMember {
   id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamRole @default(MEMBER)
   joinedAt  DateTime @default(now())
 
-  // Relations
-  userId String
-  user   User @relation("UserTeamMemberships", fields: [userId], references: [id], onDelete: Cascade)
-  teamId String
-  team   Team @relation("TeamMembers", fields: [teamId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, teamId])
+  @@unique([teamId, userId])
   @@map("team_members")
 }
 
 model TeamChat {
   id        String   @id @default(cuid())
+  teamId    String
   name      String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  // Relations
-  teamId String
-  team   Team          @relation("TeamChats", fields: [teamId], references: [id], onDelete: Cascade)
-  messages TeamMessage[] @relation("ChatMessages")
+  team     Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  messages TeamMessage[]
 
   @@map("team_chats")
 }
 
 model TeamMessage {
   id        String   @id @default(cuid())
+  chatId    String
+  authorId  String
   content   String
   createdAt DateTime @default(now())
 
-  // Relations
-  authorId String
-  author   User      @relation("UserTeamMessages", fields: [authorId], references: [id], onDelete: Cascade)
-  chatId   String
-  chat     TeamChat  @relation("ChatMessages", fields: [chatId], references: [id], onDelete: Cascade)
+  chat   TeamChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@map("team_messages")
 }
 
-model UserFollow {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
 
-  // Relations
-  followerId String
-  follower   User @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
-  followingId String
-  following   User @relation("UserFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+model UserFollow {
+  id           String @id @default(cuid())
+  followerId   String
+  followingId  String
+
+  follower User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@unique([followerId, followingId])
   @@map("user_follows")
+}
+
+model MessageLike {
+  id        String  @id @default(cuid())
+  userId    String
+  messageId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@map("message_likes")
 }
 
 model Account {
@@ -244,7 +177,7 @@ model Account {
   id_token          String?
   session_state     String?
 
-  user User @relation("UserAccounts", fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@map("accounts")
@@ -255,7 +188,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -269,33 +202,142 @@ model VerificationToken {
   @@map("verification_tokens")
 }
 
-model Notification {
-  id        String   @id @default(cuid())
-  title     String
-  message   String
-  read      Boolean  @default(false)
-  timestamp DateTime @default(now())
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#3b82f6")
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  userId String
-  user   User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     User[]   @relation("ProjectMembers")
+  tasks       Task[]
+  activities  Activity[]
 
-  @@map("notifications")
+  @@map("projects")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(todo)
+  priority    Priority   @default(medium)
+  dueDate     DateTime?
+  estimatedHours Float?
+  actualHours   Float?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdById String
+  createdBy   User       @relation("TaskCreator", fields: [createdById], references: [id])
+  comments    Comment[]
+  activities  Activity[]
+  attachments Attachment[]
+
+  @@map("tasks")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  filename  String
+  fileUrl   String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  // Relations
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Activity {
+  id        String       @id @default(cuid())
+  type      ActivityType
+  description String
+  metadata  String?      // JSON string for additional data
+  createdAt DateTime     @default(now())
+
+  // Relations
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
 }
 
 enum UserRole {
-  USER
   ADMIN
+  MANAGER
+  USER
 }
 
 enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  DONE
+  todo
+  doing
+  done
+  archived
 }
 
 enum Priority {
-  LOW
-  MEDIUM
-  HIGH
+  low
+  medium
+  high
+  urgent
+}
+
+enum ActivityType {
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  COMMENT_ADDED
+  PROJECT_CREATED
+  USER_JOINED
+  USER_LEFT
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  data      Json?
+  createdAt DateTime @default(now())
+  read      Boolean  @default(false)
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
 }
