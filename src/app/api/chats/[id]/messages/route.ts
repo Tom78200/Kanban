@@ -131,25 +131,52 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const me = await prisma.user.findUnique({ where: { email: session.user.email } })
-    if (!me) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    const { searchParams } = new URL(request.url)
-    const messageId = searchParams.get('messageId')
-    if (!messageId) return NextResponse.json({ error: 'messageId required' }, { status: 400 })
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
 
-    const msg = await prisma.teamMessage.findUnique({ where: { id: messageId } })
-    if (!msg) return NextResponse.json({ error: 'Message not found' }, { status: 404 })
-    if (msg.authorId !== me.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const { id } = await params;
+    const { messageId } = await request.json();
 
-    await prisma.teamMessage.delete({ where: { id: messageId } })
-    return NextResponse.json({ success: true })
-  } catch (e) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    if (!messageId) {
+      return NextResponse.json(
+        { error: 'ID du message requis' },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier que l'utilisateur est membre de l'équipe
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: id,
+        user: {
+          email: session.user.email
+        }
+      }
+    });
+
+    if (!teamMember) {
+      return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 });
+    }
+
+    // Supprimer le message
+    await prisma.teamMessage.delete({
+      where: {
+        id: messageId
+      }
+    });
+
+    return NextResponse.json({ message: 'Message supprimé avec succès' });
+  } catch (error) {
+    console.error('Erreur lors de la suppression du message:', error);
+    return NextResponse.json(
+      { error: 'Erreur interne du serveur' },
+      { status: 500 }
+    );
   }
 }
 
